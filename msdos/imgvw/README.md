@@ -1,6 +1,6 @@
 # imgvw
 
-A MS-DOS utility to view BMP3 images (up to 320x200 pixels).
+An MS-DOS utility to view BMP3 images (up to 320x200 pixels).
 
 Usage:
 `imgvw [OPTIONS] FILE`
