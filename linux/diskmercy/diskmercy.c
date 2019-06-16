@@ -5,6 +5,18 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <argp.h>
+
+// Global state and config
+struct state
+{
+	const char *filename;
+	int append;
+	int flush_interval;
+	int buffer_size;
+	int should_flush;
+	int active;
+} state;
 
 struct buffer
 {
@@ -83,20 +95,18 @@ void buffer_destroy( struct buffer *buf )
 	buf->written = 0;
 } 
 
+
 // Alarm handler + its global variables
-int flush_interval = 0;
-int should_flush = 0;
 void alarm_handler( int signum )
 {
-	should_flush = 1;
-	alarm( flush_interval );
+	state.should_flush = 1;
+	alarm( state.flush_interval );
 }
 
 // SIGINT handler for gentle exit
-int active;
 void sigint_handler( int signum )
 {
-	active = 0;
+	state.active = 0;
 }
 
 void signal_setup( )
@@ -120,60 +130,93 @@ void signal_setup( )
 		perror( "sigaction() for SIGINT failed" );
 }
 
+// Argp parser
+const char *argp_program_version = "diskmercy v1.0";
+const char *argp_program_bug_address = "<mrjjot@gmail.com>";
+const char argp_doc[] = "diskmercy - abusive disk write restrainer";
+const char argp_keydoc[] = "FILENAME";
+const struct argp_option argp_options[] = 
+{
+	{"append", 'a', 0, 0, "Append data to output file"},
+	{"buffer", 'b', 0, 0, "Set internal buffer size [b]"},
+	{"interval", 't', 0, 0, "Set buffer flush interval [s]" },
+
+	{0}
+};
+error_t parse_opt( int key, char *arg, struct argp_state *argp )
+{
+	switch ( key )
+	{
+		// Append
+		case 'a':
+			state.append = 1;
+			break;
+		
+		// Buffer size
+		case 'b':
+			if ( sscanf( arg, "%d", &state.buffer_size ) != 1 )
+				argp_error( argp, "invalid buffer size" );
+			if ( state.buffer_size <= 0 )
+				argp_error( argp, "buffer size must be positive" );
+			break;
+			
+		// Flush interval
+		case 'i':
+			if ( sscanf( arg, "%d", &state.flush_interval ) != 1 )
+				argp_error( argp, "invalid flush interval" );	
+			if ( state.flush_interval <= 0 )
+				argp_error( argp, "flush interval must be positive" );
+			break;
+				
+		case ARGP_KEY_ARG:
+			if ( argp->arg_num >= 1 ) argp_usage( argp );
+			state.filename = arg;
+			break;
+			
+		case ARGP_KEY_END:
+			if ( argp->arg_num < 1 ) argp_usage( argp );
+			break;
+			
+		default:
+			return ARGP_ERR_UNKNOWN;
+	}
+	
+	return 0;
+}
+
 int main( int argc, char **argv )
 {
-	if ( argc < 2 || argc > 4 )
-	{
-		fprintf( stderr, "Usage:\n\t%s FILE [buffer size] [flush interval]\n\nUse negative flush interval for no auto flushing.\n", argv[0] );
-		exit( EXIT_FAILURE );
-	}
-	
-	// The defaults - 1M and no auto-flush (global, because we have interrupts)
-	int buffer_size = 1024 * 1024;
-	flush_interval = 0;
-	
-	// Buffer size specified
-	if ( argc > 2 )
-	{
-		if ( sscanf( argv[2], "%d", &buffer_size ) != 1 || buffer_size <= 0  )
-		{
-			fprintf( stderr, "Buffer size must be a positive integer!\n" );
-			exit( EXIT_FAILURE );
-		}
-	}
-	
-	// Flush interval specified
-	if ( argc > 3 )
-	{
-		if ( sscanf( argv[3], "%d", &flush_interval ) != 1 )
-		{
-			fprintf( stderr, "Flush interval must be an integer!\n" );
-			exit( EXIT_FAILURE );
-		}
-		
-		// Clamp to 0
-		if ( flush_interval < 0 )
-			flush_interval = 0;
-	}
+	// Defaults
+	state.buffer_size = 1024 * 1024;
+	state.flush_interval = 0;
+	state.append = 0;
+	state.should_flush = 0;
+
+	// Parse options
+	static struct argp argp = {argp_options, parse_opt, argp_keydoc, argp_doc};
+	argp_parse( &argp, argc, argv, 0, 0, NULL );
 	
 	// Clear the file
-	FILE *f = fopen( argv[1], "wb" );
-	if ( f == NULL )
-		perror( "fopen() failed when clearing the file" );
-	if ( fclose( f )  == EOF )
-		perror( "fclose() failed when clearing the file" );
+	if ( !state.append )
+	{
+		FILE *f = fopen( argv[1], "wb" );
+		if ( f == NULL )
+			perror( "fopen() failed when clearing the file" );
+		if ( fclose( f )  == EOF )
+			perror( "fclose() failed when clearing the file" );
+	}
 
 	// Buffer setup
 	struct buffer buf;
-	buffer_init( &buf, buffer_size, argv[1] );
+	buffer_init( &buf, state.buffer_size, state.filename );
 	
 	// Schedule the first alarm and setup signal handlers
 	signal_setup( );
-	alarm( flush_interval );
+	alarm( state.flush_interval );
 	
 	// This has to be global, because we want nice exit with SIGINT
-	active = 1;
-	while ( active )
+	state.active = 1;
+	while ( state.active )
 	{
 		// Read from stdin
 		// Using read() here, because it handles signals nicely
@@ -199,10 +242,10 @@ int main( int argc, char **argv )
 		}
 
 		// Flushing
-		if ( should_flush )
+		if ( state.should_flush )
 		{
 			buffer_flush( &buf );
-			should_flush = 0;
+			state.should_flush = 0;
 		}
 	
 	}
