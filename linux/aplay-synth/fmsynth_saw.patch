@@ -1,0 +1,38 @@
+diff --git a/linux/aplay-synth/fmsynth.c b/linux/aplay-synth/fmsynth.c
+index 0a64079..53ed7fa 100644
+--- a/linux/aplay-synth/fmsynth.c
++++ b/linux/aplay-synth/fmsynth.c
+@@ -17,7 +17,8 @@ void outsample( float v )
+ // Single harmonic function
+ float sinewave( double t, float freq )
+ {
+-	return sin( t * freq * M_PI * 2 );
++	//return sin( t * freq * M_PI * 2 );
++	return 1.9 * fmod( t * freq, 1 ) - 1;
+ }
+ 
+ int main( )
+@@ -35,11 +36,11 @@ int main( )
+ 		
+ 		// Branch FM algorithm
+ 		tcarrier += dt \
+-			+ 0.0011 * sinewave( t, 1000 )
+-			+ 0.0010 * sinewave( t, 1002 );
++			+ 0.00005 * sinewave( t, 45 );
++			//+ 0.0010 * sinewave( t, 10002 );
+ 		
+ 		// Carrier frequency
+-		float carrier = sinewave( tcarrier, 110 );
++		float carrier = sinewave( tcarrier, 185 );
+ 		
+ 		// Simple envelope
+ 		if ( cnt % (long)( SAMPLE_RATE * 3 ) == 0 ) envelope = 1;
+@@ -47,7 +48,7 @@ int main( )
+ 		else envelope -= 0.75 / SAMPLE_RATE;
+ 		
+ 		// Output the sample	
+-		outsample( carrier * envelope );		
++		outsample( carrier /** envelope*/ );		
+ 		
+ 		cnt++;
+ 	}
