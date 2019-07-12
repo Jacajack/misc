@@ -35,7 +35,7 @@ int main( int argc, char **argv )
 		last = !last;
 
 		// Log
-		if ( ms > 15 )
+		if ( ms > 20 )
 		{
 			bodlog( stderr, ms );
 			if ( argv[1] != NULL )
