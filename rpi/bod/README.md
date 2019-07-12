@@ -7,3 +7,6 @@ Example:
 
 Useful command for viewing logs:
 `paste <(cut -f 1 -d ' ' < bodlog.txt | xargs -L 1 -i date -d @{}) <(cut -d ' ' -f 3 < bodlog.txt)`
+
+Schematic:<br>
+<img width=60% src=./bod.jpeg></img>
