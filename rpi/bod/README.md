@@ -13,3 +13,11 @@ For converting logs to CSV: <br>
 
 Schematic:<br>
 <img width=60% src=./bod.jpeg></img>
+
+
+# bod2
+
+Same as above, but better, because it's interrupt-based. The hardware and logging format are a bit different. Requires C11, because of atomic stuff.
+
+Schematic:<br>
+<img width=60% src=./bod2.jpeg></img>
