@@ -12,3 +12,6 @@ Supported options:
  - `-l <value>` - lightness (only in 256 color mode)
  
 
+Screenshots:<br>
+<img src=img/eyebw.png></img><br>
+<img src=img/eye.png></img><br>
