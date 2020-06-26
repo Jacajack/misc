@@ -73,7 +73,7 @@ void delay(float t)
 // Current speed is passed as an argument in order to allow hysteresis implementation
 static int fan_control_logic(int id, int temp, int speed)
 {
-	return 2 * (temp - 55) + 15;
+	return 3 * (temp - 55) + 15;
 }
 
 int main(int argc, char **argv)
