@@ -2,6 +2,16 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <time.h>
+#include <math.h>
+
+// Speeds
+#define FAN_SPIN_UP_SPEED 50
+#define FAN_MIN_SPEED 15
+
+// Modes
+#define FAN_AUTO   0
+#define FAN_MANUAL 1
 
 // Controlled GPU id
 static int gpu_id = 0;
@@ -31,8 +41,7 @@ void fan_speed(int id, int percent)
 }
 
 // Changes fan control mode (auto/manual)
-#define FAN_AUTO   0
-#define FAN_MANUAL 1
+
 void fan_ctl(int id, int mode)
 {
 	char buf[1024];
@@ -40,7 +49,7 @@ void fan_ctl(int id, int mode)
 	system(buf);
 }
 
-// Called on exit
+// Called on exit - returns default fan controls
 void quit(int ec)
 {
 	fan_ctl(gpu_id, FAN_AUTO);
@@ -53,59 +62,55 @@ void sigint_handler(int signum)
 	quit(EXIT_FAILURE);
 }
 
-// Clamped linear speed regulation
-static int calc_fan_speed(int temp)
+// Nice and easy nanosleep wrapper
+void delay(float t)
 {
-	// 60deg - 40%
-	// 80deg - 60%
-	// speed = (T - 60deg) / 20 deg * 20% + 40%
-	int speed = (temp - 60) + 40;
-	return speed < 40 ? 40 : speed; 
+	struct timespec ts = {.tv_sec = floorf(t), .tv_nsec = fmodf(t, 1) * 1e9};
+	nanosleep(&ts, NULL);
 }
 
 // User-defined fan control logic (must return new fan speed)
-// In this case it implements simple hysteresis between T_LOW and T_HIGH temperature values
-#define T_LOW 55
-#define T_HIGH 65
+// Current speed is passed as an argument in order to allow hysteresis implementation
 static int fan_control_logic(int id, int temp, int speed)
 {
-	if (speed > 0) // Fan already running?
-	{
-		speed = calc_fan_speed(temp);
-		
-		// Turn off fan below 50deg
-		if (temp < T_LOW) speed = 0;
-		
-	}
-	else
-	{
-		// Enable fan above T_HIGH
-		if (temp > T_HIGH) speed = calc_fan_speed(temp);
-	}
-	
-	return speed;
+	return 2 * (temp - 55) + 15;
 }
 
 int main(int argc, char **argv)
 {
+	// Handle SIGINT nicely
 	signal(SIGINT, sigint_handler);
 	
 	// GPU ID
 	const char *gpu_id_str = getenv("GPUID");
 	if (gpu_id_str) sscanf(gpu_id_str, "%d", &gpu_id);
-	else fprintf(stderr, "assuming GPUID=0...\n");
+	else fprintf(stderr, "assuming GPUID = 0...\n");
 	
 	// Start manual fan control
 	fan_ctl(gpu_id, FAN_MANUAL);
 	
+	// Spin up fan to FAN_SPIN_UP_SPEED so it can be throttled down smoothly
+	int speed = FAN_SPIN_UP_SPEED;
+	fan_speed(gpu_id, speed);
+	delay(1.f);
+	
 	// The control loop
 	while (1)
 	{
-		static int speed = 0;
 		int temp = get_temp(gpu_id);
-		speed = fan_control_logic(gpu_id, temp, speed);
+		int target_speed = fan_control_logic(gpu_id, temp, speed);
+		
+		// Clamp target speed if below FAN_MIN_SPEED
+		// The fan is never turned off, because it makes a loud noise when spinning up
+		if (target_speed < FAN_MIN_SPEED) target_speed = FAN_MIN_SPEED;
+		
+		// Smoothly change fan speed
+		if (target_speed < speed) speed--;
+		else if (target_speed > speed) speed++;
 		fan_speed(gpu_id, speed);
-		sleep(1);
+		
+		// Sleep
+		delay(0.5f);
 	}
 	
 	// Restore auto control
