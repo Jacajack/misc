@@ -24,7 +24,10 @@ int get_temp(int id)
 	
 	FILE *fp = popen(buf, "r");
 	if (fp == NULL)
+	{
+		perror("nvidia-smi call error");
 		raise(SIGINT);
+	}
 	
 	int temp = -1;
 	fscanf(fp, "%d", &temp);
@@ -37,7 +40,13 @@ void fan_speed(int id, int percent)
 {
 	char buf[1024];
 	snprintf(buf, sizeof buf, "nvidia-settings -a \"[fan-%d]/GPUTargetFanSpeed=%d\" 2>&1 >/dev/null", id, percent);
-	system(buf);
+	FILE *fp = popen(buf, "r");
+	if (fp == NULL)
+	{
+		perror("nvidia-settings call error");
+		raise(SIGINT);
+	}
+	pclose(fp);
 }
 
 // Changes fan control mode (auto/manual)
@@ -46,7 +55,13 @@ void fan_ctl(int id, int mode)
 {
 	char buf[1024];
 	snprintf(buf, sizeof buf, "nvidia-settings -a \"[gpu-%d]/GPUFanControlState=%d\" 2>&1 >/dev/null", id, mode);
-	system(buf);
+	FILE *fp = popen(buf, "r");
+	if (fp == NULL)
+	{
+		perror("nvidia-settings call error");
+		raise(SIGINT);
+	}
+	pclose(fp);
 }
 
 // Called on exit - returns default fan controls
