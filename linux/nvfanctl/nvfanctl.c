@@ -88,7 +88,8 @@ void delay(float t)
 // Current speed is passed as an argument in order to allow hysteresis implementation
 static int fan_control_logic(int id, int temp, int speed)
 {
-	return 3 * (temp - 50) + 15;
+	// return 3 * (temp - 50) + 15;                              // Virgin linear
+	return temp < 20 ? 0 : expf(0.02f * powf(temp - 6.f, 1.3f)); // Chad exponential
 }
 
 int main(int argc, char **argv)
