@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 
 // Speeds
 #define FAN_SPIN_UP_SPEED 50
@@ -13,8 +14,19 @@
 #define FAN_AUTO   0
 #define FAN_MANUAL 1
 
+// RPM sampling
+#define RPM_SAMPLES       6
+#define RPM_RESPIN_THRES  2000
+
 // Controlled GPU id
 static int gpu_id = 0;
+
+// Nice and easy nanosleep wrapper
+void delay(float t)
+{
+	struct timespec ts = {.tv_sec = floorf(t), .tv_nsec = fmodf(t, 1) * 1e9};
+	nanosleep(&ts, NULL);
+}
 
 // Returns temperature of a GPU
 int get_temp(int id)
@@ -35,6 +47,25 @@ int get_temp(int id)
 	return temp;
 }
 
+// Returns fan RPM
+int get_rpm(int id)
+{
+	char buf[1024];
+	snprintf(buf, sizeof buf, "nvidia-settings -q \"[fan-%d]/GPUCurrentFanSpeedRPM\" -t", id);
+	
+	FILE *fp = popen(buf, "r");
+	if (fp == NULL)
+	{
+		perror("nvidia-settings call error");
+		raise(SIGINT);
+	}
+	
+	int rpm = -1;
+	fscanf(fp, "%d", &rpm);
+	pclose(fp);
+	return rpm;
+}
+
 // Set fan speed
 void fan_speed(int id, int percent)
 {
@@ -49,8 +80,15 @@ void fan_speed(int id, int percent)
 	pclose(fp);
 }
 
-// Changes fan control mode (auto/manual)
+// Spins the fan up, so it can be throttled down
+int fan_spin_up(int id)
+{
+	fan_speed(id, FAN_SPIN_UP_SPEED);
+	delay(2.f);
+	return FAN_SPIN_UP_SPEED;
+}
 
+// Changes fan control mode (auto/manual)
 void fan_ctl(int id, int mode)
 {
 	char buf[1024];
@@ -77,13 +115,6 @@ void sigint_handler(int signum)
 	quit(EXIT_FAILURE);
 }
 
-// Nice and easy nanosleep wrapper
-void delay(float t)
-{
-	struct timespec ts = {.tv_sec = floorf(t), .tv_nsec = fmodf(t, 1) * 1e9};
-	nanosleep(&ts, NULL);
-}
-
 // User-defined fan control logic (must return new fan speed)
 // Current speed is passed as an argument in order to allow hysteresis implementation
 static int fan_control_logic(int id, int temp, int speed)
@@ -106,15 +137,35 @@ int main(int argc, char **argv)
 	fan_ctl(gpu_id, FAN_MANUAL);
 	
 	// Spin up fan to FAN_SPIN_UP_SPEED so it can be throttled down smoothly
-	int speed = FAN_SPIN_UP_SPEED;
-	fan_speed(gpu_id, speed);
-	delay(1.f);
-	
+	int speed = fan_spin_up(gpu_id);
+
 	// The control loop
 	while (1)
 	{
 		int temp = get_temp(gpu_id);
+		int rpm = get_rpm(gpu_id);
 		int target_speed = fan_control_logic(gpu_id, temp, speed);
+		
+		// Calculate RPM change
+		static int last_rpm = 0;
+		int rpm_delta = rpm - last_rpm;
+		last_rpm = rpm;
+		
+		// Last deltas and their sum
+		static int rpm_deltas[RPM_SAMPLES] = {0};
+		int rpm_change_sum = 0;
+		memmove(&rpm_deltas[1], rpm_deltas, sizeof(rpm_deltas[0]) * (RPM_SAMPLES - 1));
+		rpm_deltas[0] = rpm_delta;
+		for (int i = 0; i < RPM_SAMPLES; i++)
+			rpm_change_sum += abs(rpm_deltas[i]);
+		
+		// Respin the fan if it's unstable
+		if (rpm_change_sum >= RPM_RESPIN_THRES)
+		{
+			speed = fan_spin_up(gpu_id);
+			memset(rpm_deltas, 0, RPM_SAMPLES * sizeof(rpm_deltas[0]));
+			continue;
+		}
 		
 		// Clamp target speed if below FAN_MIN_SPEED
 		// The fan is never turned off, because it makes a loud noise when spinning up
