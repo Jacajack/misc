@@ -6,6 +6,11 @@
 #include <math.h>
 #include <string.h>
 
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include <NVCtrl/NVCtrlLib.h>
+
 // Speeds
 #define FAN_SPIN_UP_SPEED 50
 #define FAN_MIN_SPEED 15
@@ -21,6 +26,13 @@
 // Controlled GPU id
 static int gpu_id = 0;
 
+// X11 stuff
+static Display *display = NULL;
+static int screen = 0;
+
+// Loop breaker
+int alive = 1;
+
 // Nice and easy nanosleep wrapper
 void delay(float t)
 {
@@ -31,53 +43,23 @@ void delay(float t)
 // Returns temperature of a GPU
 int get_temp(int id)
 {
-	char buf[1024];
-	snprintf(buf, sizeof buf, "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader --id=%d", id);
-	
-	FILE *fp = popen(buf, "r");
-	if (fp == NULL)
-	{
-		perror("nvidia-smi call error");
-		raise(SIGINT);
-	}
-	
 	int temp = -1;
-	fscanf(fp, "%d", &temp);
-	pclose(fp);
+	XNVCTRLQueryTargetAttribute(display, NV_CTRL_TARGET_TYPE_GPU, id, 0, NV_CTRL_GPU_CORE_TEMPERATURE, &temp);
 	return temp;
 }
 
 // Returns fan RPM
 int get_rpm(int id)
 {
-	char buf[1024];
-	snprintf(buf, sizeof buf, "nvidia-settings -q \"[fan-%d]/GPUCurrentFanSpeedRPM\" -t", id);
-	
-	FILE *fp = popen(buf, "r");
-	if (fp == NULL)
-	{
-		perror("nvidia-settings call error");
-		raise(SIGINT);
-	}
-	
 	int rpm = -1;
-	fscanf(fp, "%d", &rpm);
-	pclose(fp);
+	XNVCTRLQueryTargetAttribute(display, NV_CTRL_TARGET_TYPE_COOLER, id, 0, NV_CTRL_THERMAL_COOLER_SPEED, &rpm);
 	return rpm;
 }
 
 // Set fan speed
 void fan_speed(int id, int percent)
 {
-	char buf[1024];
-	snprintf(buf, sizeof buf, "nvidia-settings -a \"[fan-%d]/GPUTargetFanSpeed=%d\" 2>&1 >/dev/null", id, percent);
-	FILE *fp = popen(buf, "r");
-	if (fp == NULL)
-	{
-		perror("nvidia-settings call error");
-		raise(SIGINT);
-	}
-	pclose(fp);
+	XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_COOLER, id, 0, NV_CTRL_THERMAL_COOLER_LEVEL, percent);
 }
 
 // Spins the fan up, so it can be throttled down
@@ -91,28 +73,13 @@ int fan_spin_up(int id)
 // Changes fan control mode (auto/manual)
 void fan_ctl(int id, int mode)
 {
-	char buf[1024];
-	snprintf(buf, sizeof buf, "nvidia-settings -a \"[gpu-%d]/GPUFanControlState=%d\" 2>&1 >/dev/null", id, mode);
-	FILE *fp = popen(buf, "r");
-	if (fp == NULL)
-	{
-		perror("nvidia-settings call error");
-		raise(SIGINT);
-	}
-	pclose(fp);
-}
-
-// Called on exit - returns default fan controls
-void quit(int ec)
-{
-	fan_ctl(gpu_id, FAN_AUTO);
-	exit(ec);
+	XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_GPU, id, 0, NV_CTRL_GPU_COOLER_MANUAL_CONTROL, mode);
 }
 
 // SIGINT handler
 void sigint_handler(int signum)
 {
-	quit(EXIT_FAILURE);
+	alive = 0;
 }
 
 // User-defined fan control logic (must return new fan speed)
@@ -133,6 +100,10 @@ int main(int argc, char **argv)
 	if (gpu_id_str) sscanf(gpu_id_str, "%d", &gpu_id);
 	else fprintf(stderr, "assuming GPUID = 0...\n");
 	
+	// Start X11 session
+	display = XOpenDisplay(NULL);
+	screen = DefaultScreen(display);
+	
 	// Start manual fan control
 	fan_ctl(gpu_id, FAN_MANUAL);
 	
@@ -140,7 +111,7 @@ int main(int argc, char **argv)
 	int speed = fan_spin_up(gpu_id);
 
 	// The control loop
-	while (1)
+	while (alive)
 	{
 		int temp = get_temp(gpu_id);
 		int rpm = get_rpm(gpu_id);
@@ -181,6 +152,8 @@ int main(int argc, char **argv)
 	}
 	
 	// Restore auto control
-	quit(EXIT_SUCCESS);
+	fan_ctl(gpu_id, FAN_AUTO);
+	XFlush(display);
+	XCloseDisplay(display);
 	return 0;
 }
