@@ -1,7 +1,7 @@
 # Maintainer: Oh, I don't think so.
 pkgname=jailif
 pkgver=0.95
-pkgrel=1
+pkgrel=2
 epoch=
 pkgdesc='A set of utilities for jailing network interfaces'
 arch=('any')
@@ -9,7 +9,7 @@ url='https://github.com/Jacajack/misc/tree/master/linux/jailif'
 license=('GPL')
 groups=()
 depends=('grep' 'bash' 'coreutils' 'iproute2' 'sudo')
-optdepends=('zerotier-one: for chadgaming', 'playonlinux: for chadgaming')
+optdepends=('zerotier-one: for chadgaming' 'playonlinux: for chadgaming')
 provides=()
 conflicts=()
 replaces=()
