@@ -1,1 +1,130 @@
-jailif.sh
+#!/bin/sh
+SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
+NAMESPACE=$2
+NAMESPACE_EXISTS=false
+CLEANUP_DONE=false
+ASUSER=$3
+IFACE=$1
+
+function colortext() {
+	echo -ne "\x1b[3$1m$2\x1b[0m"
+}
+
+function message() {
+	echo -ne "[$(colortext $1 "$2")] $3\n"
+}
+
+function msg_info() {
+	message 4 "INFO" "$@"
+}
+
+function msg_warn() {
+	message 3 "WARN" "$@"
+}
+
+function msg_err() {
+	message 1 "FAIL" "$@"
+}
+
+function msg_ok() {
+	message 2 " OK " "$@"
+}
+
+function fail() {
+	msg_err "$@"
+	exit 1
+}
+
+function usage() {
+	msg_info "Usage: $(basename "$0") <interface> <namespace> <username> <command> [args]"
+}
+
+if [ -z "$NAMESPACE" ]; then
+	msg_err "Missing namespace name"
+	usage
+	exit 1
+fi
+
+if [ -z "$IFACE" ]; then
+	msg_err "Missing interface name"
+	usage
+	exit 1
+fi
+
+if [ -z "$ASUSER" ]; then
+	msg_err "Missing username"
+	usage
+	exit 1
+fi
+
+if ip netns | grep "^$NAMESPACE" > /dev/null; then
+	msg_warn "Namespace $NAMESPACE already exists"
+	NAMESPACE_EXISTS=true
+fi
+
+if [ $EUID -ne 0 ]; then
+	msg_err "This script must be run as root"
+	msg_info "Maybe you meant to use 'easyjailif'?"
+	exit 1
+fi
+
+IP=$(ip -f inet addr show $IFACE | grep -o 'inet [0-9\.\/]*' | cut -d ' ' -f 2)
+
+if [ -z "$IP" ]; then
+	msg_err "Failed to acquire $IFACE's IP address"
+	msg_info "Please make sure that it really exists"
+	exit 1
+fi
+
+msg_info "$IFACE's IP is $IP"
+
+function start() {
+	if [ $NAMESPACE_EXISTS = false ]; then
+		msg_info "Creating namespace $NAMESPACE"
+		ip netns add $NAMESPACE || fail "Failed to create the namespace $NAMESPACE"
+	fi
+
+	msg_info "Moving interface $IFACE to $NAMESPACE"
+	ip l set dev $IFACE netns $NAMESPACE || fail "Failed to move $IFACE to $NAMESPACE"
+
+	msg_info "Configuring the interface..."
+	ip netns exec $NAMESPACE ip l set $IFACE up                                 || fail "Failed to bring $IFACE up"
+	ip netns exec $NAMESPACE ip l set lo up                                     || fail "Failed to bring the loopback device up"
+	ip netns exec $NAMESPACE ip a add $IP dev $IFACE                            || fail "Failed to assign IP for $IFACE"
+	ip netns exec $NAMESPACE ip route add 255.255.255.255 dev $IFACE scope link || fail "Failed to route broadcast traffic to $IFACE"
+	# ip netns exec $NAMESPACE route add -host 255.255.255.255 dev $IFACE       || fail "Failed to route broadcast traffic to $IFACE"
+	msg_ok "Init complete!"
+}
+
+function cleanup() {
+	if [ $CLEANUP_DONE = true ]; then
+		return
+	fi
+
+	msg_info "Bringing the interface back to the default namespace"
+	ip netns exec $NAMESPACE ip l set dev $IFACE netns 1 || fail "Failed to move $IFACE back to the default namespace"
+	ip l set $IFACE up                                   || fail "Failed to bring $IFACE up"
+	ip a add $IP dev $IFACE                              || fail "Failed to assign IP for $IFACE"
+
+	if [ $NAMESPACE_EXISTS = false ]; then
+		msg_info "Deleting the namespace $NAMESPACE..."
+		ip netns del $NAMESPACE || msg_err "Failed to delete the namespace $NAMESPACE"
+	else
+		msg_warn "NOT deleting namespace $NAMESPACE"
+	fi
+	
+	CLEANUP_DONE=true
+	msg_ok "Cleanup complete!"
+}
+
+
+start
+trap cleanup EXIT
+trap cleanup SIGINT
+
+ARGV=("$@")
+ip netns exec $NAMESPACE sudo -u $ASUSER "${ARGV[@]:3}"
+
+cleanup
+
+

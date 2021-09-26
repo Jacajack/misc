@@ -1,1 +1,61 @@
-easyjailif.sh
+#!/bin/sh
+SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
+NAMESPACE="$2"
+IFACE="$1"
+
+function colortext() {
+	echo -ne "\x1b[3$1m$2\x1b[0m"
+}
+
+function message() {
+	echo -ne "[$(colortext $1 "$2")] $3\n"
+}
+
+function msg_info() {
+	message 4 "INFO" "$@"
+}
+
+function msg_warn() {
+	message 3 "WARN" "$@"
+}
+
+function msg_err() {
+	message 1 "FAIL" "$@"
+}
+
+function msg_ok() {
+	message 2 " OK " "$@"
+}
+
+function fail() {
+	msg_err "$@"
+	exit 1
+}
+
+function usage() {
+	msg_info "Usage: $(basename "$0") <interface> [namespace]"
+}
+
+if [ -z "$NAMESPACE" ]; then
+	NAMESPACE="jail_$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 8)"
+	msg_warn "Generated a random namespace ($NAMESPACE)"
+fi
+
+if [ -z "$IFACE" ]; then
+	msg_err "Missing interface name"
+	usage
+	exit 1
+fi
+
+msg_info "Preparing shell rc file & env dump..."
+RCFILE="$(mktemp)"
+cat > "$RCFILE" << 'EOF'
+PS1='\[\033[01;36m\][\u@\h\[\033[01;34m\] \W\[\033[01;36m\]]=>\[\033[00m\] '
+EOF
+export -p >> "$RCFILE"
+
+
+sudo "$SCRIPTDIR/jailif" "$IFACE" "$NAMESPACE" "$USER" bash --init-file "$RCFILE" -i
+
+msg_info "Deleting the rc file"
+rm "$RCFILE"
