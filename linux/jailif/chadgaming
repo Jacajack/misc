@@ -1,7 +1,6 @@
 #!/bin/sh
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
-NAMESPACE="gigachad_$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 8)"
-IFACE="$1"
+NETNAME="$1"
 GAME="$2"
 
 function colortext() {
@@ -34,7 +33,7 @@ function fail() {
 }
 
 function usage() {
-	msg_info "Usage: $(basename "$0") <interface> <game>"
+	msg_info "Usage: $(basename "$0") <zerotier-network> <game>"
 }
 
 if ! [ -x "$(command -v playonlinux)" ]; then
@@ -45,8 +44,8 @@ if ! [ -x "$(command -v zerotier-cli)" ]; then
 	fail "Please install zerotier-one"
 fi
 
-if [ -z "$IFACE" ]; then
-	msg_err "Missing interface name"
+if [ -z "$NETNAME" ]; then
+	msg_err "Missing network name"
 	usage
 	exit 1
 fi
@@ -82,6 +81,28 @@ cat << 'EOF'
          
 EOF
 
+STATUS="$(sudo zerotier-cli listnetworks)"
+NETINFO="$(echo "$STATUS" | grep -E "^([^ ]*\s+){3}$NETNAME\s+.*")"
+
+if [ -z "$NETINFO" ]; then
+	msg_err "Unknown network name '$NETNAME'"
+	msg_info "Hint: Are you sure that zerotier-one is running? You can start it with \`sudo systemctl start zerotier-one\`"
+	exit 1
+fi
+
+# Look for OK PUBLIC/PRIVATE
+if ! echo "$NETINFO" | grep -E 'OK\s+(PUBLIC|PRIVATE)' > /dev/null; then
+	fail "Access denied to the network '$NETNAME'"
+fi
+
+# Extract interface name
+IFACE="$(echo "$NETINFO" | cut -d ' ' -f 8)"
+if [ -z "$IFACE" ]; then
+	fail "Failed to determine interface name for '$NETNAME'"
+fi
+
+msg_info "Network '$NETNAME' is assigned to interface '$IFACE'"
+msg_ok "The Chad Gaming Launcher has done its job."
 
 "$SCRIPTDIR/easyjailif" $IFACE << EOF
 playonlinux --run "$GAME"
