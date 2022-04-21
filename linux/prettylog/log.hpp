@@ -51,4 +51,5 @@ namespace logger_styles
 	extern const logger_message_style info;
 	extern const logger_message_style warning;
 	extern const logger_message_style error;
+	extern const logger_message_style assertion;
 }

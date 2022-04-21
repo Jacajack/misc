@@ -68,4 +68,11 @@ namespace logger_styles
 		.title_color = 1,
 		.message_color = 15,
 	};
+	
+	const logger_message_style assertion
+	{
+		.title = "assert",
+		.title_color = 12,
+		.message_color = 12,
+	};
 }

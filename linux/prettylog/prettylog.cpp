@@ -44,6 +44,8 @@ int main(int argc, char *argv[])
 			log(logger_styles::warning, "{}", line);
 		else if (lower_line.find("debug") != std::string::npos)
 			log(logger_styles::debug, "{}", line);
+		else if (lower_line.find("assert") != std::string::npos)
+			log(logger_styles::assertion, "{}", line);
 		else
 			log(logger_styles::info, "{}", line);
 	}
