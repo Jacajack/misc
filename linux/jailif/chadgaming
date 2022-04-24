@@ -81,8 +81,8 @@ cat << 'EOF'
          
 EOF
 
-STATUS="$(sudo zerotier-cli listnetworks)"
-NETINFO="$(echo "$STATUS" | grep -E "^([^ ]*\s+){3}$NETNAME\s+.*")"
+STATUS="$(sudo zerotier-cli listnetworks | cut -d ' ' -f 3-)"
+NETINFO="$(echo "$STATUS" | grep -E "^$NETNAME")"
 
 if [ -z "$NETINFO" ]; then
 	msg_err "Unknown network name '$NETNAME'"
@@ -96,7 +96,7 @@ if ! echo "$NETINFO" | grep -E 'OK\s+(PUBLIC|PRIVATE)' > /dev/null; then
 fi
 
 # Extract interface name
-IFACE="$(echo "$NETINFO" | cut -d ' ' -f 8)"
+IFACE="$(echo "$NETINFO" | cut -d ' ' -f 6)"
 if [ -z "$IFACE" ]; then
 	fail "Failed to determine interface name for '$NETNAME'"
 fi

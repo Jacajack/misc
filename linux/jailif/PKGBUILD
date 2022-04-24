@@ -1,7 +1,7 @@
 # Maintainer: Oh, I don't think so.
 pkgname=jailif
 pkgver=0.95
-pkgrel=2
+pkgrel=3
 epoch=
 pkgdesc='A set of utilities for jailing network interfaces'
 arch=('any')
