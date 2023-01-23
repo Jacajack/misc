@@ -1,4 +1,5 @@
 #!/bin/sh
+PLAYONLINUX=playonlinux4
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 NETNAME="$1"
 GAME="$2"
@@ -36,8 +37,8 @@ function usage() {
 	msg_info "Usage: $(basename "$0") <zerotier-network> <game>"
 }
 
-if ! [ -x "$(command -v playonlinux)" ]; then
-	fail "Please install playonlinux"
+if ! [ -x "$(command -v $PLAYONLINUX)" ]; then
+	fail "Please install $PLAYONLINUX"
 fi
 
 if ! [ -x "$(command -v zerotier-cli)" ]; then
@@ -105,5 +106,5 @@ msg_info "Network '$NETNAME' is assigned to interface '$IFACE'"
 msg_ok "The Chad Gaming Launcher has done its job."
 
 "$SCRIPTDIR/easyjailif" $IFACE << EOF
-playonlinux --run "$GAME"
+$PLAYONLINUX --run "$GAME"
 EOF
