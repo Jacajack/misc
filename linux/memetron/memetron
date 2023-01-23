@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Reaction meme directory
+MEMEDIR="$HOME/.memetron"
+
+# Fix - xclip -i hangs when no filename is provided (only directory)
+FILENAME="$(ls "$MEMEDIR" | dmenu -i -l 15)"
+if [[ -z "$FILENAME"N ]]; then exit 1; fi;
+
+# Because jpg doesn't work sometimes
+convert "$MEMEDIR/$FILENAME" png:- | xclip -selection clipboard -t "image/png"
