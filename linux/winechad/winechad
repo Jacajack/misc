@@ -1,0 +1,298 @@
+#!/usr/bin/python3
+import argparse
+import sys
+import os
+import json
+import subprocess
+from pathlib import Path
+from colorama import init as colorama_init
+from colorama import Fore, Style
+
+class WineApp:
+	def __init__(self, name, exe_path, icon_path = "", description = "", prefix = None, env = dict(), args = []):
+		self.name = name.strip()
+		self.exe_path = Path(exe_path)
+		self.icon_path = Path(icon_path)
+		self.env = env
+		self.args = args
+		self.description = description
+		self.prefix = prefix
+	
+	def set_prefix(self, pfx):
+		self.prefix = pfx
+	
+	def validate(self):
+		assert self.name != "", "Application name must not be empty"
+	
+	def is_valid(self):
+		try:
+			self.validate()
+		except:
+			return False
+		else:
+			return True
+			
+	def invalid_reason(self):
+		try:
+			self.validate()
+		except Exception as e:
+			return str(e)
+		else:
+			return None
+	
+	@staticmethod
+	def from_json(j):
+		return WineApp(
+			name = j["app_name"],
+			exe_path = j["path"],
+			icon_path = j.get("icon_path", ""),
+			description = j.get("description", ""),
+			env = j.get("env", dict()),
+			args = j.get("args", [])
+		)
+		
+
+class WinePrefix:
+	def __init__(self, name, prefix_path, wine_path, description = "", applications = [], is_64_bit = False):
+		self.name = name.strip()
+		self.prefix_path = Path(prefix_path)
+		self.wine_path = Path(wine_path)
+		self.applications = applications
+		self.description = description
+		self.is_64_bit = is_64_bit
+		self.default_drive = "c"
+		
+		for a in self.applications:
+			a.set_prefix(self)
+		
+	@staticmethod
+	def from_json(j):
+		return WinePrefix(
+			name = j["prefix_name"],
+			prefix_path = j["path"],
+			wine_path = j["wine_path"],
+			description = j.get("description", ""),
+			applications = j["applications"],
+			is_64_bit = j.get("wine64", False)
+		)
+		
+	def validate(self):
+		assert self.name != "", "Prefix name must not be empty"
+		assert os.path.exists(self.wine_path), "WINE directory not found"
+		assert os.path.exists(self.wine_path / "bin" / "wine"), "WINE executable (bin/wine) not found"
+		assert not self.is_64_bit or os.path.exists(self.wine_path / "bin" / "wine64"), "WINE 64-bit executable (bin/wine64) not found"
+		assert os.path.exists(self.prefix_path), "Prefix directory not found"
+		
+	def is_valid(self):
+		try:
+			self.validate()
+		except:
+			return False
+		else:
+			return True
+			
+	def invalid_reason(self):
+		try:
+			self.validate()
+		except Exception as e:
+			return str(e)
+		else:
+			return None
+	
+	def run(self, cmd, cwd, env_vars = dict()):
+		pfx_env = os.environ.copy()
+		pfx_env.update(env_vars)
+		pfx_env["WINEARCH"] = "win64" if self.is_64_bit else "win32"
+		pfx_env["WINEPREFIX"] = self.prefix_path
+		proc = subprocess.Popen(
+			cmd,
+			cwd = cwd,
+			env = pfx_env
+		)
+		proc.wait()
+	
+	def drive_path(self, letter):
+		assert len(letter) == 1
+		assert letter.isalpha()
+		return self.prefix_path / ("drive_" + letter.lower())
+	
+	def run_wine(self, exe_path, args = [], env_vars = dict()):
+		# FIXME this doesn't allow drives other than C:
+		# IDK if that's a problem though
+		# Also note: C:\a.exe will have to be referred to as './a.exe'
+		exe_path = Path(exe_path)
+		if not exe_path.is_absolute() and len(exe_path.parts) != 1:
+			exe_path = self.drive_path(self.default_drive) / exe_path
+		
+		wine_exe = "wine64" if self.is_64_bit else "wine"
+		cmd = [self.wine_path / "bin" / wine_exe, exe_path] + args
+		self.run(cmd, exe_path.parent, env_vars)
+		
+	def run_taskmgr(self):
+		self.run_wine("taskmgr.exe")
+		
+	def run_control_panel(self):
+		self.run_wine("control.exe")
+		
+	def run_cmdline(self):
+		self.run_wine("cmd.exe")
+		
+	def run_wineboot(self):
+		self.run_wine("wineboot.exe")
+		
+	def run_winecfg(self):
+		self.run_wine("winecfg.exe")
+		
+	
+class WineChad:
+	def __init__(self, prefixes):
+		self.prefixes = prefixes
+		
+	def get_app_by_name(self, name):
+		matching_prefixes = [p for p in self.prefixes for a in p.applications if a.name == name]
+		if len(matching_prefixes) > 1:
+			raise KeyError(f"There's more than one prefix with app named {name}")
+		elif len(matching_prefixes) == 0:
+			raise KeyError(f"No prefix contains app named {name}")
+		
+		pfx = matching_prefixes[0]
+		matching_apps = [a for a in pfx.applications if a.name == name]
+		if len(matching_apps) > 1:
+			raise KeyError(f"There's more than one app named {name} in {pfx.name}")
+		
+		assert(len(matching_apps) == 1)
+		return matching_apps[0]
+	
+	def get_prefix_by_name(self, name):
+		matching_prefixes = [p for p in self.prefixes if p.name == name]
+		if len(matching_prefixes) > 1:
+			raise KeyError(f"There's more than one prefix named {name}")
+		elif len(matching_prefixes) == 0:
+			raise KeyError(f"No prefix named {name}")
+		
+		assert(len(matching_prefixes) == 1)
+		return matching_prefixes[0]
+		
+	@staticmethod
+	def from_json(j):
+		return WineChad(j['prefixes'])
+		
+	@staticmethod
+	def load_from_file(f):
+		def config_from_json(j):
+			if "prefix_name" in j.keys():
+				return WinePrefix.from_json(j)
+			elif "app_name" in j.keys():
+				return WineApp.from_json(j)
+			elif "prefixes" in j.keys():
+				return WineChad.from_json(j)
+			else:
+				return j
+		config = json.load(f, object_hook = config_from_json)
+		assert(type(config) is WineChad)
+		return config
+		
+def winechad_read_config(path):
+	with open(path) as f:
+		return WineChad.load_from_file(f)
+
+def winechad_list(config, describe = False, tree = False):
+	for pfx in config.prefixes:
+		prefix_invalid_reason = pfx.invalid_reason()
+		prefix_color = Fore.GREEN if prefix_invalid_reason is None else Fore.RED;
+		prefix_info = "" if prefix_invalid_reason is None else f"{Fore.RED}[{prefix_invalid_reason}]{Style.RESET_ALL}"
+		prefix_64_bit_info = " (64-bit)" if pfx.is_64_bit else ""
+		if tree:
+			print(f"{prefix_color}{pfx.name}{Style.RESET_ALL}{prefix_64_bit_info} {Fore.WHITE}({pfx.description}){Style.RESET_ALL}:\t{prefix_info}")
+		app_prefix = '\t- ' if tree else ''
+		for app in pfx.applications:
+			app_invalid_reason = app.invalid_reason()
+			app_color = Fore.GREEN if app_invalid_reason is None else Fore.RED;
+			app_info = "" if app_invalid_reason is None else f"{Fore.RED}[{app_invalid_reason}]{Style.RESET_ALL}"
+			if describe:
+				print(f"{app_prefix}{app_color}{app.name}{Style.RESET_ALL} - {Fore.WHITE}{app.description}{Style.RESET_ALL}\t{app_info}")
+			else:
+				print(f"{app_prefix}{app_color}{app.name}{Style.RESET_ALL}")
+		
+def winechad_listprefix(config, describe = False):
+	for pfx in config.prefixes:
+		prefix_color = Fore.GREEN if pfx.is_valid() else Fore.RED;
+		if describe:
+			print(f"{prefix_color}{pfx.name}{Style.RESET_ALL} - {Fore.WHITE}{pfx.description}{Style.RESET_ALL}")
+		else:
+			print(f"{prefix_color}{pfx.name}{Style.RESET_ALL}")
+	
+def winechad_main():
+	colorama_init()
+
+	parser = argparse.ArgumentParser(
+		prog = "winechad",
+		description = "WINE prefix manager for true chads",
+		epilog = "Truly amazing."
+	)
+	
+	cmd_subparsers = parser.add_subparsers(dest = "command", help = "Sub-command")
+	run_parser = cmd_subparsers.add_parser("run", help = "Run WINE application")
+	run_parser.add_argument("appname", help = "WINE application name")
+	
+	list_parser = cmd_subparsers.add_parser("list", help = "List WINE apps")
+	list_parser.add_argument("-d", "--describe", action = "store_true")
+	list_parser.add_argument("-t", "--tree", action = "store_true")
+	
+	listprefix_parser = cmd_subparsers.add_parser("listprefix", help = "List WINE prefixes")
+	listprefix_parser.add_argument("-d", "--describe", action = "store_true")
+	
+	isolate_parser = cmd_subparsers.add_parser("isolate", help = "Configure WINE prefix for isolated operation")
+	isolate_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	configure_parser = cmd_subparsers.add_parser("configure", help = "Configure WINE prefix")
+	configure_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	reboot_parser = cmd_subparsers.add_parser("reboot", help = "Reboot WINE prefix")
+	reboot_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	control_parser = cmd_subparsers.add_parser("control", help = "Open Control Panel for WINE prefix")
+	control_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	taskmgr_parser = cmd_subparsers.add_parser("taskmgr", help = "Open Task Manager for WINE prefix")
+	taskmgr_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	regedit_parser = cmd_subparsers.add_parser("regedit", help = "Open Registry Editor for WINE prefix")
+	regedit_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	cmd_parser = cmd_subparsers.add_parser("cmd", help = "Open CMD.EXE in selected WINE prefix")
+	cmd_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	args = parser.parse_args()
+	config = None
+	try:
+		config = winechad_read_config(os.getenv("WINECHAD_CONFIG", default = os.path.expanduser("~/.config/winechad/config.json")))
+	except Exception as ex:
+		print(f"Could not load JSON config: {Fore.RED}{str(ex)}{Style.RESET_ALL}")
+		sys.exit(1)
+	
+	try:
+		if (args.command == 'list'):
+			winechad_list(config, describe = args.describe, tree = args.tree)
+		elif (args.command == 'listprefix'):
+			winechad_listprefix(config, describe = args.describe)
+		elif (args.command == 'cmd'):
+			config.get_prefix_by_name(args.prefix).run_cmdline()
+		elif (args.command == 'run'):
+			app = config.get_app_by_name(args.appname)
+			app.prefix.run_wine(app.exe_path, app.args, app.env)
+		elif (args.command == 'taskmgr'):
+			config.get_prefix_by_name(args.prefix).run_taskmgr()
+		elif (args.command == 'control'):
+			config.get_prefix_by_name(args.prefix).run_control_panel()
+		elif (args.command == 'reboot'):
+			config.get_prefix_by_name(args.prefix).run_wineboot()
+		elif (args.command == 'configure'):
+			config.get_prefix_by_name(args.prefix).run_winecfg()
+		elif (args.command == 'regedit'):
+			config.get_prefix_by_name(args.prefix).run_regedit()
+	except Exception as ex:
+		print(f"Failed: {Fore.RED}{str(ex)}{Style.RESET_ALL}")
+		
+if __name__ == "__main__":
+	winechad_main()
