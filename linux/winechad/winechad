@@ -58,14 +58,14 @@ class WineApp:
 		
 
 class WinePrefix:
-	def __init__(self, name, prefix_path, wine_path, description = "", applications = [], is_64_bit = False):
+	def __init__(self, name, prefix_path, wine_path, description = "", applications = [], is_64_bit = False, default_drive = "c"):
 		self.name = name.strip()
 		self.prefix_path = Path(prefix_path)
 		self.wine_path = Path(wine_path)
 		self.applications = applications
 		self.description = description
 		self.is_64_bit = is_64_bit
-		self.default_drive = "c"
+		self.default_drive = default_drive
 		
 		for a in self.applications:
 			a.set_prefix(self)
@@ -78,7 +78,8 @@ class WinePrefix:
 			wine_path = j["wine_path"],
 			description = j.get("description", ""),
 			applications = j["applications"],
-			is_64_bit = j.get("wine64", False)
+			is_64_bit = j.get("wine64", False),
+			default_drive = j.get("default_drive", "c"),
 		)
 		
 	def validate(self):
@@ -87,6 +88,7 @@ class WinePrefix:
 		assert os.path.exists(self.wine_path / "bin" / "wine"), "WINE executable (bin/wine) not found"
 		assert not self.is_64_bit or os.path.exists(self.wine_path / "bin" / "wine64"), "WINE 64-bit executable (bin/wine64) not found"
 		assert os.path.exists(self.prefix_path), "Prefix directory not found"
+		self.drive_path(self.default_drive) # Validate drive path
 		
 	def is_valid(self):
 		try:
@@ -118,8 +120,8 @@ class WinePrefix:
 		proc.wait()
 	
 	def drive_path(self, letter):
-		assert len(letter) == 1
-		assert letter.isalpha()
+		assert len(letter) == 1, "Drive name can only be a single letter a-z"
+		assert letter.isalpha(), "Drive name can only be a single letter a-z"
 		return self.prefix_path / ("drive_" + letter.lower())
 	
 	def run_winetricks(self, args):
@@ -240,8 +242,8 @@ def winechad_info(config):
 			app_invalid_reason = app.invalid_reason()
 			app_invalid = app_invalid_reason is not None
 			app_color = Fore.RED if app_invalid else Fore.GREEN;
-			app_info = "" if app_invalid_reason is None else f"{Fore.RED}[{app_invalid_reason}]{Style.RESET_ALL}"
-			print(f"\u251c\u2500\u2500\u2500\u2500\u25ba {app_color}{app.name}{Style.RESET_ALL} - {Fore.WHITE}{app.description}{Style.RESET_ALL}\t{app_info}")
+			
+			print(f"\u251c\u2500\u2500\u2500\u2500\u25ba {app_color}{app.name}{Style.RESET_ALL} - {Fore.WHITE}{app.description}{Style.RESET_ALL}")
 			if app_invalid:
 				print(f"\u2502        Status: {Fore.RED}Invalid - {app_invalid_reason}{Style.RESET_ALL}")
 			else:
