@@ -23,6 +23,8 @@ class WineApp:
 	
 	def validate(self):
 		assert self.name != "", "Application name must not be empty"
+		if not self.exe_path.is_absolute() and len(self.exe_path.parts) != 1:
+			assert os.path.exists(self.prefix.drive_path(self.prefix.default_drive) / self.exe_path), "EXE does not exist"
 	
 	def is_valid(self):
 		try:
@@ -39,6 +41,9 @@ class WineApp:
 			return str(e)
 		else:
 			return None
+	
+	def run(self):
+		self.prefix.run_wine(self.exe_path, args = self.args, env_vars = self.env)
 	
 	@staticmethod
 	def from_json(j):
@@ -127,7 +132,7 @@ class WinePrefix:
 		wine_exe = "wine64" if self.is_64_bit else "wine"
 		cmd = [self.wine_path / "bin" / wine_exe, exe_path] + args
 		self.run(cmd, exe_path.parent, env_vars)
-		
+	
 	def run_taskmgr(self):
 		self.run_wine("taskmgr.exe")
 		
@@ -196,6 +201,47 @@ def winechad_read_config(path):
 	with open(path) as f:
 		return WineChad.load_from_file(f)
 
+def winechad_info(config):
+	add_newline = False
+	for pfx in config.prefixes:
+		
+		# For better visual separation between prefixes
+		if add_newline:
+			print("")
+		add_newline = True
+		
+		prefix_invalid_reason = pfx.invalid_reason()
+		prefix_invalid = prefix_invalid_reason is not None
+		prefix_color = Fore.RED if prefix_invalid else Fore.GREEN
+
+		print(f"{prefix_color}{pfx.name}{Style.RESET_ALL} - {Fore.WHITE}{pfx.description}{Style.RESET_ALL}")
+		
+		if prefix_invalid:
+			print(f"\u2502    Status: {Fore.RED}Invalid - {prefix_invalid_reason}{Style.RESET_ALL}")
+		else:
+			print(f"\u2502    Status: {Fore.GREEN}OK{Style.RESET_ALL}")
+		print(f"\u2502    Prefix: {pfx.prefix_path}")
+		print(f"\u2502      Wine: {pfx.wine_path}")
+		print(f"\u2502      Arch: {'64-bit' if pfx.is_64_bit else '32-bit'}")
+		print(f"\u2502")
+		
+		
+		for app in pfx.applications:
+			app_invalid_reason = app.invalid_reason()
+			app_invalid = app_invalid_reason is not None
+			app_color = Fore.RED if app_invalid else Fore.GREEN;
+			app_info = "" if app_invalid_reason is None else f"{Fore.RED}[{app_invalid_reason}]{Style.RESET_ALL}"
+			print(f"\u251c\u2500\u2500\u2500\u2500\u25ba {app_color}{app.name}{Style.RESET_ALL} - {Fore.WHITE}{app.description}{Style.RESET_ALL}\t{app_info}")
+			if app_invalid:
+				print(f"\u2502        Status: {Fore.RED}Invalid - {app_invalid_reason}{Style.RESET_ALL}")
+			else:
+				print(f"\u2502        Status: {Fore.GREEN}OK{Style.RESET_ALL}")
+			print(f"\u2502          Path: {app.exe_path}")
+			print(f"\u2502          Args: {' ' .join(app.args)}")
+			print(f"\u2502           Env: {app.env}")
+			print(f"\u2502")
+
+
 def winechad_list(config, describe = False, tree = False):
 	for pfx in config.prefixes:
 		prefix_invalid_reason = pfx.invalid_reason()
@@ -234,6 +280,8 @@ def winechad_main():
 	cmd_subparsers = parser.add_subparsers(dest = "command", help = "Sub-command")
 	run_parser = cmd_subparsers.add_parser("run", help = "Run WINE application")
 	run_parser.add_argument("appname", help = "WINE application name")
+	
+	info_parser = cmd_subparsers.add_parser("info", help = "Show configuration and apps")
 	
 	list_parser = cmd_subparsers.add_parser("list", help = "List WINE apps")
 	list_parser.add_argument("-d", "--describe", action = "store_true")
@@ -274,13 +322,14 @@ def winechad_main():
 	try:
 		if (args.command == 'list'):
 			winechad_list(config, describe = args.describe, tree = args.tree)
+		elif (args.command == 'info'):
+			winechad_info(config)
 		elif (args.command == 'listprefix'):
 			winechad_listprefix(config, describe = args.describe)
 		elif (args.command == 'cmd'):
 			config.get_prefix_by_name(args.prefix).run_cmdline()
 		elif (args.command == 'run'):
-			app = config.get_app_by_name(args.appname)
-			app.prefix.run_wine(app.exe_path, app.args, app.env)
+			config.get_app_by_name(args.appname).run()
 		elif (args.command == 'taskmgr'):
 			config.get_prefix_by_name(args.prefix).run_taskmgr()
 		elif (args.command == 'control'):
