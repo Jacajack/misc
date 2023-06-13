@@ -242,16 +242,23 @@ def winechad_info(config):
 			print(f"\u2502")
 
 
-def winechad_list(config, describe = False, tree = False):
+def winechad_list(config, describe = False, tree = False, only_good = False):
 	for pfx in config.prefixes:
+		if only_good and not pfx.is_valid():
+			continue
+		
 		prefix_invalid_reason = pfx.invalid_reason()
 		prefix_color = Fore.GREEN if prefix_invalid_reason is None else Fore.RED;
 		prefix_info = "" if prefix_invalid_reason is None else f"{Fore.RED}[{prefix_invalid_reason}]{Style.RESET_ALL}"
 		prefix_64_bit_info = " (64-bit)" if pfx.is_64_bit else ""
+		
 		if tree:
 			print(f"{prefix_color}{pfx.name}{Style.RESET_ALL}{prefix_64_bit_info} {Fore.WHITE}({pfx.description}){Style.RESET_ALL}:\t{prefix_info}")
 		app_prefix = '\t- ' if tree else ''
 		for app in pfx.applications:
+			if only_good and not app.is_valid():
+				continue
+			
 			app_invalid_reason = app.invalid_reason()
 			app_color = Fore.GREEN if app_invalid_reason is None else Fore.RED;
 			app_info = "" if app_invalid_reason is None else f"{Fore.RED}[{app_invalid_reason}]{Style.RESET_ALL}"
@@ -286,6 +293,7 @@ def winechad_main():
 	list_parser = cmd_subparsers.add_parser("list", help = "List WINE apps")
 	list_parser.add_argument("-d", "--describe", action = "store_true")
 	list_parser.add_argument("-t", "--tree", action = "store_true")
+	list_parser.add_argument("-g", "--good", action = "store_true")
 	
 	listprefix_parser = cmd_subparsers.add_parser("listprefix", help = "List WINE prefixes")
 	listprefix_parser.add_argument("-d", "--describe", action = "store_true")
@@ -321,7 +329,7 @@ def winechad_main():
 	
 	try:
 		if (args.command == 'list'):
-			winechad_list(config, describe = args.describe, tree = args.tree)
+			winechad_list(config, describe = args.describe, tree = args.tree, only_good = args.good)
 		elif (args.command == 'info'):
 			winechad_info(config)
 		elif (args.command == 'listprefix'):
