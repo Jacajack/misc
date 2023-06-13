@@ -109,6 +109,7 @@ class WinePrefix:
 		pfx_env.update(env_vars)
 		pfx_env["WINEARCH"] = "win64" if self.is_64_bit else "win32"
 		pfx_env["WINEPREFIX"] = self.prefix_path
+		pfx_env["WINE"] = self.get_wine_bin_path()
 		proc = subprocess.Popen(
 			cmd,
 			cwd = cwd,
@@ -121,6 +122,16 @@ class WinePrefix:
 		assert letter.isalpha()
 		return self.prefix_path / ("drive_" + letter.lower())
 	
+	def run_winetricks(self, args):
+		self.run(
+			cmd = ["winetricks"] + args,
+			cwd = self.drive_path(self.default_drive),
+		)
+	
+	def get_wine_bin_path(self):
+		wine_exe = "wine64" if self.is_64_bit else "wine"
+		return self.wine_path / "bin" / wine_exe
+	
 	def run_wine(self, exe_path, args = [], env_vars = dict()):
 		# FIXME this doesn't allow drives other than C:
 		# IDK if that's a problem though
@@ -129,8 +140,7 @@ class WinePrefix:
 		if not exe_path.is_absolute() and len(exe_path.parts) != 1:
 			exe_path = self.drive_path(self.default_drive) / exe_path
 		
-		wine_exe = "wine64" if self.is_64_bit else "wine"
-		cmd = [self.wine_path / "bin" / wine_exe, exe_path] + args
+		cmd = [self.get_wine_bin_path(), exe_path] + args
 		self.run(cmd, exe_path.parent, env_vars)
 	
 	def run_taskmgr(self):
@@ -298,7 +308,7 @@ def winechad_main():
 	listprefix_parser = cmd_subparsers.add_parser("listprefix", help = "List WINE prefixes")
 	listprefix_parser.add_argument("-d", "--describe", action = "store_true")
 	
-	isolate_parser = cmd_subparsers.add_parser("isolate", help = "Configure WINE prefix for isolated operation")
+	isolate_parser = cmd_subparsers.add_parser("sandbox", help = "Configure WINE prefix for isolated operation")
 	isolate_parser.add_argument("prefix", help = "WINE prefix name")
 	
 	configure_parser = cmd_subparsers.add_parser("configure", help = "Configure WINE prefix")
@@ -315,6 +325,10 @@ def winechad_main():
 	
 	regedit_parser = cmd_subparsers.add_parser("regedit", help = "Open Registry Editor for WINE prefix")
 	regedit_parser.add_argument("prefix", help = "WINE prefix name")
+	
+	winetricks_parser = cmd_subparsers.add_parser("tricks", help = "Run winetricks for selected prefix")
+	winetricks_parser.add_argument("prefix", help = "WINE prefix name")
+	winetricks_parser.add_argument("args", nargs = argparse.REMAINDER)
 	
 	cmd_parser = cmd_subparsers.add_parser("cmd", help = "Open CMD.EXE in selected WINE prefix")
 	cmd_parser.add_argument("prefix", help = "WINE prefix name")
@@ -348,6 +362,11 @@ def winechad_main():
 			config.get_prefix_by_name(args.prefix).run_winecfg()
 		elif (args.command == 'regedit'):
 			config.get_prefix_by_name(args.prefix).run_regedit()
+		elif (args.command == 'tricks'):
+			config.get_prefix_by_name(args.prefix).run_winetricks(args.args)
+		elif (args.command == 'sandbox'):
+			config.get_prefix_by_name(args.prefix).run_winetricks(["sandbox"])
+			config.get_prefix_by_name(args.prefix).run_winetricks(["mimeassoc=off"])
 	except Exception as ex:
 		print(f"Failed: {Fore.RED}{str(ex)}{Style.RESET_ALL}")
 		
