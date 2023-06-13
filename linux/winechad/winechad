@@ -2,6 +2,7 @@
 import argparse
 import sys
 import os
+import re
 import json
 import subprocess
 from pathlib import Path
@@ -22,6 +23,7 @@ class WineApp:
 		self.prefix = pfx
 	
 	def validate(self):
+		assert re.match(r'[\w-]+$', self.name), "Name must contain only 'word' characters"
 		assert self.name != "", "Application name must not be empty"
 		if not self.exe_path.is_absolute() and len(self.exe_path.parts) != 1:
 			assert os.path.exists(self.prefix.drive_path(self.prefix.default_drive) / self.exe_path), "EXE does not exist"
@@ -83,6 +85,7 @@ class WinePrefix:
 		)
 		
 	def validate(self):
+		assert re.match(r'[\w-]+$', self.name), "Name must contain only 'word' characters"
 		assert self.name != "", "Prefix name must not be empty"
 		assert os.path.exists(self.wine_path), "WINE directory not found"
 		assert os.path.exists(self.wine_path / "bin" / "wine"), "WINE executable (bin/wine) not found"
