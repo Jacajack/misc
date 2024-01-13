@@ -1,0 +1,10 @@
+[Unit]
+Description=Philips Hue control daemon script
+Requires=dbus.socket
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hue_simple_scenes.py
+
+[Install]
+WantedBy=default.target
