@@ -1,6 +1,8 @@
 [Unit]
 Description=Philips Hue control daemon script
 Requires=dbus.socket
+Wants=network-online.target
+After=network.target network-online.target
 
 [Service]
 Type=simple
