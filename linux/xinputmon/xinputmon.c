@@ -83,8 +83,8 @@ int main(int argc, char *argv[])
 	// Check if XInput2 is present
 	int xinput2_major_opcode;
 	int dummy;
-	bool xinput2_preset = XQueryExtension(display, INAME, &xinput2_major_opcode, &dummy, &dummy);
-	assert(xinput2_preset);
+	bool xinput2_present = XQueryExtension(display, INAME, &xinput2_major_opcode, &dummy, &dummy);
+	assert(xinput2_present);
 	
 	// We're only interested in hierarchy changes
 	int device_mask = XI_HierarchyChangedMask;
