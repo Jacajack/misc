@@ -1,0 +1,32 @@
+pkgname=xinputmon
+pkgver=1.0
+pkgrel=1
+epoch=
+pkgdesc='X11 input change monitor'
+arch=('any')
+url='https://github.com/Jacajack/misc'
+license=('MIT')
+groups=()
+depends=()
+optdepends=()
+provides=()
+conflicts=()
+replaces=()
+options=()
+source=('xinputmon.c' 'Makefile')
+cksums=(SKIP SKIP)
+
+prepare() {
+	:
+}
+
+check() {
+	:
+}
+
+package() {
+	make
+	mkdir -p "$pkgdir/usr/bin"
+	cp "xinputmon" "$pkgdir/usr/bin/xinputmon"
+}
+
