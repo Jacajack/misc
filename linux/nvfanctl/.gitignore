@@ -1,0 +1,6 @@
+*.zst
+nvfanctl
+NVML
+pkg
+src
+

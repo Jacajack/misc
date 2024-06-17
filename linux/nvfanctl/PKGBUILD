@@ -1,0 +1,32 @@
+pkgname=nvfanctl
+pkgver=1.0
+pkgrel=1
+epoch=
+pkgdesc='Nvidia fan controller'
+arch=('any')
+url='https://github.com/Jacajack/misc'
+license=('MIT')
+groups=()
+depends=(libxnvctrl libx11)
+optdepends=()
+provides=()
+conflicts=()
+replaces=()
+options=()
+source=('nvfanctl.c' 'makefile')
+cksums=(SKIP SKIP)
+
+prepare() {
+	:
+}
+
+check() {
+	:
+}
+
+package() {
+	make
+	mkdir -p "$pkgdir/usr/bin"
+	cp "nvfanctl" "$pkgdir/usr/bin/nvfanctl"
+}
+
