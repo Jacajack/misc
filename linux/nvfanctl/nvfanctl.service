@@ -1,0 +1,10 @@
+[Unit]
+Description=Custom Nvidia fan controller
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=nvfanctl
+Restart=always
+
+[Install]
+WantedBy=xsession.target

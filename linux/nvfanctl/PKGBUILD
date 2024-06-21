@@ -1,5 +1,5 @@
 pkgname=nvfanctl
-pkgver=1.0
+pkgver=1.1
 pkgrel=1
 epoch=
 pkgdesc='Nvidia fan controller'
@@ -7,14 +7,14 @@ arch=('any')
 url='https://github.com/Jacajack/misc'
 license=('MIT')
 groups=()
-depends=(libxnvctrl libx11)
+depends=(libxnvctrl libx11 systemd)
 optdepends=()
 provides=()
 conflicts=()
 replaces=()
 options=()
-source=('nvfanctl.c' 'makefile')
-cksums=(SKIP SKIP)
+source=('nvfanctl.c' 'makefile' 'nvfanctl.service')
+cksums=(SKIP SKIP SKIP)
 
 prepare() {
 	:
@@ -27,6 +27,15 @@ check() {
 package() {
 	make
 	mkdir -p "$pkgdir/usr/bin"
+	mkdir -p "$pkgdir/usr/lib/systemd/user"
 	cp "nvfanctl" "$pkgdir/usr/bin/nvfanctl"
+	cp "nvfanctl.service" "$pkgdir/usr/lib/systemd/user"
 }
 
+post_install() {
+	systemctl --global enable --now nvfanctl
+}
+
+pre_remove() {
+	systemctl --global disable --now nvfanctl
+}
