@@ -1,5 +1,5 @@
 pkgname=nvfanctl
-pkgver=1.1
+pkgver=1.2
 pkgrel=1
 epoch=
 pkgdesc='Nvidia fan controller'
@@ -33,9 +33,9 @@ package() {
 }
 
 post_install() {
-	systemctl --global enable --now nvfanctl
+	systemctl --global preset nvfanctl
 }
 
 pre_remove() {
-	systemctl --global disable --now nvfanctl
+	systemctl --global disable nvfanctl
 }
