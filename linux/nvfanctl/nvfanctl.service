@@ -7,4 +7,4 @@ ExecStart=nvfanctl
 Restart=always
 
 [Install]
-WantedBy=xsession.target
+WantedBy=window-manager.target
