@@ -102,6 +102,12 @@ int main(int argc, char **argv)
 	
 	// Start X11 session
 	display = XOpenDisplay(NULL);
+	if (display == NULL)
+	{
+		fprintf(stderr, "Could not open display! (XOpenDisplay() failed)\n");
+		return 1;
+	}
+	
 	screen = DefaultScreen(display);
 	
 	// Start manual fan control
