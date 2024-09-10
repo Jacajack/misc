@@ -1,8 +1,8 @@
 # picom-rounded-borders
 
-This is a simple GLSL shader for enablind rounded window borders in Picom.
+This is a simple GLSL shader for enabling rounded window borders in Picom.
 It works by sampling color of the original border and adding fillets in the corners.
-This method relies on the borders provided by your WM and therefore doesn't require patching anything or installing extra software.
+This method relies on the borders provided by your WM and therefore doesn't require patching WM or installing any extra software.
 
 To use the shader run:
 ```
