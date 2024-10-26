@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "nvml.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
@@ -25,6 +26,9 @@
 
 // Controlled GPU id
 static int gpu_id = 0;
+
+// NVML
+static nvmlDevice_t gpu;
 
 // X11 stuff
 static Display *display = NULL;
@@ -59,7 +63,10 @@ int get_rpm(int id)
 // Set fan speed
 void fan_speed(int id, int percent)
 {
-	XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_COOLER, id, 0, NV_CTRL_THERMAL_COOLER_LEVEL, percent);
+	// XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_COOLER, id, 0, NV_CTRL_THERMAL_COOLER_LEVEL, percent);
+	nvmlReturn_t err = nvmlDeviceSetFanSpeed_v2(gpu, 0, percent);
+	if (err != NVML_SUCCESS)
+		fprintf(stderr, "nvmlDeviceSetFanSpeed_v2() error!\n");
 }
 
 // Spins the fan up, so it can be throttled down
@@ -73,7 +80,13 @@ int fan_spin_up(int id)
 // Changes fan control mode (auto/manual)
 void fan_ctl(int id, int mode)
 {
-	XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_GPU, id, 0, NV_CTRL_GPU_COOLER_MANUAL_CONTROL, mode);
+	// XNVCTRLSetTargetAttribute(display, NV_CTRL_TARGET_TYPE_GPU, id, 0, NV_CTRL_GPU_COOLER_MANUAL_CONTROL, mode);
+	if (mode == FAN_AUTO)
+	{
+		nvmlReturn_t err = nvmlDeviceSetDefaultFanSpeed_v2(gpu, 0);
+		if (err != NVML_SUCCESS)
+			fprintf(stderr, "nvmlDeviceSetDefaultFanSpeed_v2() error!\n");
+	}
 }
 
 // SIGINT handler
@@ -109,6 +122,21 @@ int main(int argc, char **argv)
 	}
 	
 	screen = DefaultScreen(display);
+
+	nvmlReturn_t err;
+	err = nvmlInit_v2();
+	if (err != NVML_SUCCESS)
+	{
+		fprintf(stderr, "nvmlInit_v2() failed!\n");
+		return 1;
+	}
+	
+	err = nvmlDeviceGetHandleByIndex_v2(gpu_id, &gpu);
+	if (err != NVML_SUCCESS)
+	{
+		fprintf(stderr, "nvmlDeviceGetHandleByIndex_v2() failed!\n");
+		return 1;
+	}
 	
 	// Start manual fan control
 	fan_ctl(gpu_id, FAN_MANUAL);
@@ -159,6 +187,7 @@ int main(int argc, char **argv)
 	
 	// Restore auto control
 	fan_ctl(gpu_id, FAN_AUTO);
+	nvmlShutdown();	
 	XFlush(display);
 	XCloseDisplay(display);
 	return 0;
