@@ -1,0 +1,87 @@
+#!/usr/bin/python
+import argparse
+from pathlib import Path
+import shutil
+from rich.logging import RichHandler
+import logging
+import subprocess
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(message)s",
+    handlers=[RichHandler()]
+)
+
+log = logging.getLogger("rich")
+
+def concat_md_tree(root: Path, depth = 0):
+    contents = ""
+    depth = max(depth, 0)
+
+    if root.is_dir():
+        main_file = root / Path("main.md")
+        if main_file.is_file():
+            contents += concat_md_tree(main_file, depth - 1)
+    
+        for item in sorted(root.iterdir(), key = lambda x: x.name):
+            if item.name == "main.md":
+                pass
+            else:
+                contents += concat_md_tree(item, depth + int(item.is_dir()))
+    elif root.is_file() and root.suffix == ".md":
+        contents += f"\n\n{{{{sec_lvl:{depth}}}}}\n\n" + root.read_text() + "\n"
+        
+    return contents
+
+def deploy(src_dir: Path, dest_dir: Path):
+    if not src_dir.is_dir():
+        log.error(f"Source directory {src_dir} does not exist.")
+        return
+
+    log.info(f"Deploying to {dest_dir}")
+    shutil.copytree(src_dir, dest_dir, dirs_exist_ok = True)
+    md = concat_md_tree(src_dir)
+
+    css_file = Path("pandoc-dark.css")
+    shutil.copy2(css_file, dest_dir)
+
+    pandoc_args = [
+        "-o", dest_dir / "index.html",
+        "--mathml",
+        "--filter", "pandoc-crossref",
+        "--template", "template-main.html",
+        "--lua-filter", "filter-main.lua",
+        "--highlight-style", "breezedark",
+        "--css", css_file,
+    ]
+
+    log.info("Starting pandoc...")
+    process = subprocess.Popen(
+        ["pandoc"] + pandoc_args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    stdout, stderr = process.communicate(input = md)
+
+    if process.returncode != 0:
+        log.error(f"Pandoc failed with error: {stderr}")
+
+    log.info("Deployment done!")
+
+def main():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+
+    deploy_parser = subparsers.add_parser('deploy', description="Deploy to HTML")
+    deploy_parser.add_argument('src_dir', type=Path, help="Source directory to copy from.")
+    deploy_parser.add_argument('dest_dir', type=Path, help="Destination directory to copy to.")
+    deploy_parser.set_defaults(func=lambda args: deploy(args.src_dir, args.dest_dir))
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == '__main__':
+    main()
