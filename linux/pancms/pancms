@@ -5,6 +5,8 @@ import shutil
 from rich.logging import RichHandler
 import logging
 import subprocess
+import datetime
+import hashlib
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -33,21 +35,13 @@ def concat_md_tree(root: Path, depth = 0):
         
     return contents
 
-def deploy(src_dir: Path, dest_dir: Path):
-    if not src_dir.is_dir():
-        log.error(f"Source directory {src_dir} does not exist.")
-        return
-
-    log.info(f"Deploying to {dest_dir}")
-    shutil.copytree(src_dir, dest_dir, dirs_exist_ok = True)
+def convert_md_tree(src_dir: Path, output_file: Path, css_file: Path):
     md = concat_md_tree(src_dir)
-
-    css_file = Path("pandoc-dark.css")
-    shutil.copy2(css_file, dest_dir)
-
+    
     pandoc_args = [
-        "-o", dest_dir / "index.html",
+        "-o", output_file,
         "--mathml",
+        "--toc",
         "--filter", "pandoc-crossref",
         "--template", "template-main.html",
         "--lua-filter", "filter-main.lua",
@@ -67,8 +61,53 @@ def deploy(src_dir: Path, dest_dir: Path):
 
     if process.returncode != 0:
         log.error(f"Pandoc failed with error: {stderr}")
+        raise ValueError("Pandoc failed!")
+    
 
+def deploy(src_dir: Path, dest_dir: Path):
+    if not src_dir.is_dir():
+        log.error(f"Source directory {src_dir} does not exist.")
+        return
+
+    log.info(f"Deploying to {dest_dir}")
+
+    css_file = "pandoc-dark.css"
+    shutil.copytree(src_dir, dest_dir, dirs_exist_ok = True)
+    shutil.copy2(css_file, dest_dir)
+    convert_md_tree(src_dir, dest_dir / "index.html", css_file)
+    
     log.info("Deployment done!")
+
+def open_editor(path: Path):
+    subprocess.Popen(
+        ["vim", path]
+    ).wait()
+    
+def edit_page(repo: Path, page: Path):
+    path = repo / page
+    if path.is_dir():
+        path = path / "main.md"
+
+    if not path.exists() and path.suffix != ".md":
+        path = path.with_suffix(".md")
+        
+    if path.is_file() and path.suffix == ".md":
+        open_editor(path)
+    else:
+        log.error(f"Failed to find ediable page {page}")
+
+def append_page(repo: Path, container: Path):
+    path = repo / container
+    
+    if not path.is_dir() or not (path / "main.md").is_file():
+        log.error(f"No such container: {container}")
+        return
+
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    hash_value = hashlib.sha256(timestamp.encode()).hexdigest()[:6]
+    entry_path = path / f"{timestamp}-{hash_value}.md"
+    open_editor(entry_path)
+    
 
 def main():
     parser = argparse.ArgumentParser()
@@ -79,9 +118,20 @@ def main():
     deploy_parser.add_argument('dest_dir', type=Path, help="Destination directory to copy to.")
     deploy_parser.set_defaults(func=lambda args: deploy(args.src_dir, args.dest_dir))
 
+    edit_parser = subparsers.add_parser('edit', description="Edit a page")
+    edit_parser.add_argument('repo', type=Path, help="The markdown repository")
+    edit_parser.add_argument('page', default=".", type=Path, help="Relative path to the page to edit")
+    edit_parser.set_defaults(func=lambda args: edit_page(args.repo, args.page))
+
+    append_parser = subparsers.add_parser('append', description="Edit a page")
+    append_parser.add_argument('repo', type=Path, help="The markdown repository")
+    append_parser.add_argument('container', default=".", type=Path, help="Relative path to the container")
+    append_parser.set_defaults(func=lambda args: append_page(args.repo, args.container))
+
     args = parser.parse_args()
     args.func(args)
 
 
 if __name__ == '__main__':
     main()
+    
