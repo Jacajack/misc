@@ -1,5 +1,5 @@
 pkgname=nvfanctl
-pkgver=1.2
+pkgver=2.0
 pkgrel=2
 epoch=
 pkgdesc='Nvidia fan controller'
@@ -13,8 +13,8 @@ provides=()
 conflicts=()
 replaces=()
 options=()
-source=('nvfanctl.c' 'makefile' 'nvfanctl.service')
-cksums=(SKIP SKIP SKIP)
+source=('nvfanctl.c' 'makefile' 'nvfanctl.service' 'nvml.h')
+cksums=(SKIP SKIP SKIP SKIP)
 
 prepare() {
 	:
