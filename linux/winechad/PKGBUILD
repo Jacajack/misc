@@ -11,6 +11,7 @@ groups=()
 depends=(
 	python3
 	python-rich
+	firejail
 
 	wine
 	wine-gecko

@@ -51,11 +51,25 @@ class WineApp:
 			return None
 	
 	def run(self):
+		self.validate()
 		self.prefix.run_wine(self.exe_path, args = self.args, env_vars = self.env)
 			
 
 class WinePrefix:
-	def __init__(self, name: str, prefix_path: Path, wine_path: Optional[Path], global_wine_dir: Path, description = "", applications = [], is_64_bit = False, default_drive = "c", default_app: Optional[str] = None):
+	def __init__(
+	    self,
+	    name: str,
+	    prefix_path: Path,
+	    wine_path: Optional[Path],
+	    global_wine_dir: Path,
+	    description = "",
+	    applications = [],
+	    is_64_bit = False,
+	    default_drive = "c:",
+	    default_app: Optional[str] = None,
+		firejail_home: bool = False,
+		firejail_profile: Optional[Path] = None,
+		firejail_enabled: bool = False):
 		self.name = name.strip()
 		self.prefix_path = prefix_path
 		self.wine_path = None if wine_path is None else Path(wine_path)
@@ -65,6 +79,9 @@ class WinePrefix:
 		self.is_64_bit = is_64_bit
 		self.default_drive = default_drive # TODO drop this
 		self.default_app = default_app
+		self.firejail_home = firejail_home
+		self.firejail_profile = firejail_profile
+		self.firejail_enabled = firejail_enabled
 		
 		for a in self.applications:
 			a.set_prefix(self)
@@ -73,7 +90,10 @@ class WinePrefix:
 	def from_dir(prefix_dir: Path, global_wine_dir: Path):
 		config = toml.load(prefix_dir / "winechad.toml")
 		prefix_config = config["prefix"]
-		is_64_bit = prefix_config.get("wine64", (prefix_dir / "drive_c" / "windows" / "syswow64").exists())
+
+		syswow64_exists = (prefix_dir / "drive_c" / "windows" / "syswow64").exists()
+		syswow64_exists = syswow64_exists or (prefix_dir / "jailhome" / "prefix" / "drive_c" / "windows" / "syswow64").exists()
+		is_64_bit = prefix_config.get("wine64", syswow64_exists)
 
 		apps = []
 		for app_config in config.get("apps", []):
@@ -94,9 +114,11 @@ class WinePrefix:
 			description = prefix_config.get("description", ""),
 			applications = apps,
 			is_64_bit = is_64_bit,
-			default_app = prefix_config.get("default_app", None),	
+			default_app = prefix_config.get("default_app", None),
+			firejail_home = prefix_config.get("firejail_home", False),
+			firejail_profile = prefix_config.get("firejail_profile", None),
+			firejail_enabled = prefix_config.get("firejail_enabled", True),
 		)
-
 		
 	def validate(self):
 		assert re.match(r'[\w-]+$', self.name), "Name must contain only 'word' characters"
@@ -104,6 +126,8 @@ class WinePrefix:
 		assert os.path.exists(self.get_wine_dir()), "WINE directory not found"
 		assert os.path.exists(self.get_wine_bin_path()), "WINE executable (bin/wine) not found"
 		assert os.path.exists(self.prefix_path), "Prefix directory not found"
+		assert not self.firejail_enabled or not self.firejail_home or (self.prefix_path / "jailhome").exists(), "'jailhome' directory does not exist"
+		
 		self.drive_path(self.default_drive) # Validate drive path
 		if self.default_app is not None:
 			self.get_app(self.default_app)
@@ -125,6 +149,7 @@ class WinePrefix:
 			return None
 	
 	def run(self, cmd: List[str], cwd: PurePosixPath, env_vars = dict()):
+		self.validate()
 		pfx_env = os.environ.copy()
 		pfx_env.update(env_vars)
 		pfx_env["WINEARCH"] = "win64" if self.is_64_bit else "win32"
@@ -132,13 +157,29 @@ class WinePrefix:
 		pfx_env["WINE"] = self.get_wine_bin_path()
 		pfx_env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d"
 
+		if self.firejail_enabled:
+			firejail_cmd = ["firejail"]
+			firejail_cmd += ["--noblacklist=/sys/module"]  # Nvidia fix
+			if self.firejail_home:
+				log.debug(f"CWD that will be translated {cwd}")
+				rel_cwd = cwd.resolve().relative_to((self.prefix_path / "jailhome").resolve())
+				firejail_cmd += ["--private=jailhome", "--private-cwd=~/" + str(rel_cwd)]
+				pfx_env["WINEPREFIX"] = os.path.expanduser("~/prefix")
+				cwd = self.prefix_path
+			if self.firejail_profile:
+				firejail_cmd += ["--profile=" + self.firejail_profile]
+			else:
+				firejail_cmd += ["--noprofile"]
+			firejail_cmd += ["--"]
+			cmd = firejail_cmd + cmd
+
 		log.info(f"WINE={pfx_env["WINE"]}")
 		log.info(f"WINEARCH={pfx_env["WINEARCH"]}")
 		log.info(f"WINEPREFIX={pfx_env["WINEPREFIX"]}")
 		log.info(f"WINEDLLOVERRIDES={pfx_env["WINEDLLOVERRIDES"]}")
 		log.info(f"CWD={cwd}")
 		log.info(f"Running subprocess: {cmd}")
-
+		
 		proc = subprocess.Popen(
 			cmd,
 			cwd = cwd,
@@ -146,10 +187,11 @@ class WinePrefix:
 		)
 		proc.wait()
 	
-	def drive_path(self, letter):
-		assert len(letter) == 1, "Drive name can only be a single letter a-z"
-		assert letter.isalpha(), "Drive name can only be a single letter a-z"
-		return self.prefix_path / ("drive_" + letter.lower())
+	def drive_path(self, drive_name: str):
+		drive_name = drive_name.replace("\\", "")
+		if self.firejail_enabled and self.firejail_home:
+			return self.prefix_path / "jailhome" / "prefix" / "dosdevices" / drive_name.lower()
+		return self.prefix_path / "dosdevices" / drive_name.lower()
 	
 	def run_winetricks(self, args):
 		log.info("Running winetricks...")
@@ -195,10 +237,14 @@ class WinePrefix:
 			cwd = exe_path.parent
 			log.info(cwd)
 			drive, *rest = cwd.parts
-			cwd = PureWindowsPath(drive.lower(), *rest)
-			real_cwd = self.prefix_path / "dosdevices" / cwd.as_posix()
+			#cwd = PureWindowsPath(drive.lower(), *rest)
+			#real_cwd = self.prefix_path / "dosdevices" / cwd.as_posix()
+			log.debug(f"CWD windows drive: {drive}")
+			log.debug(f"CWD drive path: {rest}")
+			real_cwd = self.drive_path(drive.lower()) / Path(*rest)
 		else:
-			real_cwd = self.prefix_path / "dosdevices" / "c:"
+			log.info("Relative EXE path - assuming C:\\ as CWD")
+			real_cwd = self.drive_path("c:")
 
 		cmd = [self.get_wine_bin_path(), exe_path] + args
 		self.run(cmd, real_cwd, env_vars)
@@ -225,7 +271,7 @@ class WinePrefix:
 			log.error(f"Prefix {self.name} has multiple apps named '{name}'")
 			raise KeyError(f"There's more than one app named {name} in {self.name}")
 		assert len(matching_apps) != 0, f"No app named {name} in {self.name}"
-		assert(len(matching_apps) == 1)
+		assert len(matching_apps) == 1
 		return matching_apps[0]
 	
 class WineChad:
@@ -263,8 +309,6 @@ class WineChad:
 
 		return WineChad(prefix_dirs, wine_dir)
 		
-	
-	
 	def get_prefix(self, name):
 		matching_prefixes = [p for p in self.prefixes if p.name == name]
 		if len(matching_prefixes) > 1:
@@ -272,7 +316,7 @@ class WineChad:
 		elif len(matching_prefixes) == 0:
 			raise KeyError(f"No prefix named {name}")
 		
-		assert(len(matching_prefixes) == 1)
+		assert len(matching_prefixes) == 1
 		return matching_prefixes[0]
 		
 	def list_prefixes(self):
@@ -330,7 +374,6 @@ class WineChad:
 				)
 
 		print(table)
-
 
 
 def winechad_read_config(path):
@@ -422,6 +465,7 @@ def winechad_main():
 			parser.print_help()
 	except Exception as ex:
 		print(f"Failed: [bold red]{str(ex)}[/bold red]")
-		
+
+	
 if __name__ == "__main__":
 	winechad_main()
