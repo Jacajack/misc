@@ -1,0 +1,37 @@
+#!/bin/sh
+
+if [ $# -ne 6 ]; then
+	echo "Usage: $0 <iface> <port> <from> <dest iface> <dest IP> <dest port>" >&2
+	echo "  e.g. $0 eth0 1443 192.168.1.0/24 vpn_iface 10.144.99.77 443" >&2
+	echo "" >&2
+	echo "Creates a gateway on this machine, accepting connections via <iface>" >&2
+	echo "interface, to port <port> from <from> address range. The connections" >&2
+	echo "are forwarded to <dest IP>:<dest port> via <dest iface>." >&2
+	exit 1
+fi
+
+if [ $UID -ne 0 ]; then
+	echo "Please run as root!"
+	exit 1
+fi
+
+
+GATEWAY_IF="$1"
+GATEWAY_PORT="$2"
+GATEWAY_NET="$3"
+
+DEST_IF="$4"
+DEST_IP="$5"
+DEST_PORT="$6"
+
+set -e
+set -o pipefail
+
+sysctl net.ipv4.ip_forward=1
+sysctl net.ipv4.conf.$GATEWAY_IF.forwarding=1 
+sysctl net.ipv6.conf.$DEST_IF.forwarding=1 
+
+iptables -A PREROUTING -t nat -p tcp -i $GATEWAY_IF -s $GATEWAY_NET --dport $GATEWAY_PORT -j DNAT --to-destination $DEST_IP:$DEST_PORT
+iptables -A POSTROUTING -t nat -p tcp -d $DEST_IP --dport $DEST_PORT -j MASQUERADE
+iptables -A FORWARD -p tcp -d $DEST_IP --dport $DEST_PORT -s $GATEWAY_NET -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
